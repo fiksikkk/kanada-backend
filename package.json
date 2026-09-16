@@ -1,0 +1,45 @@
+{
+  "name": "kanada-auth-gateway",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p .",
+    "start": "node dist/src/server.js",
+    "migrate": "tsx scripts/migrate.ts",
+    "create-user": "tsx scripts/create-user.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "argon2": "^0.44.0",
+    "cookie": "^2.0.1",
+    "cookie-parser": "^1.4.7",
+    "cookie-signature": "1.0.6",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "otplib": "^13.5.0",
+    "pg": "^8.16.3",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cookie-signature": "^1.1.2",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.15.6",
+    "@types/qrcode": "^1.5.5",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "allowScripts": {
+    "argon2@0.44.0": true,
+    "esbuild@0.28.2": true
+  }
+}
