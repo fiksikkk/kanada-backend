@@ -31,4 +31,6 @@ export const env = {
   rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000),
   iridiServerUrl: required("IRIDI_SERVER"),
   trustProxyHops: Number(process.env.TRUST_PROXY_HOPS ?? 1),
+  backupsDir: process.env.BACKUPS_DIR ?? "./data/backups",
+  backupRetentionDays: Number(process.env.BACKUP_RETENTION_DAYS ?? 30),
 };

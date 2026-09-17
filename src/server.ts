@@ -6,12 +6,6 @@ import { findUserById } from "./repositories/UsersRepository.js";
 import { resolveSessionFromCookieHeader } from "./services/SessionService.js";
 import { WsGatewayService } from "./services/wsGateway/WsGatewayService.js";
 
-const app = createApp();
-
-const server = app.listen(env.port, () => {
-  console.log(`kanada-auth-gateway listening on :${env.port}`);
-});
-
 const wsGateway = new WsGatewayService({
   recordAuditEvent,
   getScopesForUser,
@@ -19,5 +13,14 @@ const wsGateway = new WsGatewayService({
   resolveSessionFromCookieHeader,
   webClientOrigin: env.webClientOrigin,
   iridiServerUrl: env.iridiServerUrl,
+  backupsDir: env.backupsDir,
+  backupRetentionDays: env.backupRetentionDays,
 });
+
+const app = createApp(wsGateway.backupService);
+
+const server = app.listen(env.port, () => {
+  console.log(`kanada-auth-gateway listening on :${env.port}`);
+});
+
 wsGateway.attach(server);

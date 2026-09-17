@@ -10,6 +10,7 @@ import {
   findUserById,
   type UserRow,
 } from "../../repositories/UsersRepository.js";
+import { BackupService } from "../BackupService.js";
 import { resolveSessionFromCookieHeader } from "../SessionService.js";
 import { parseClientMessage } from "./clientMessage.js";
 import { CommandThrottle } from "./CommandThrottle.js";
@@ -22,6 +23,7 @@ const WS_PATH = "/ws";
 const DEFAULT_SET_DEVICE_MIN_INTERVAL_MS = 100;
 const DEFAULT_INBOUND_RATE_LIMIT = 30;
 const DEFAULT_INBOUND_RATE_WINDOW_MS = 1000;
+const DEFAULT_BACKUP_RETENTION_DAYS = 30;
 
 export interface WsGatewayDeps {
   recordAuditEvent: typeof recordAuditEvent;
@@ -34,6 +36,8 @@ export interface WsGatewayDeps {
   setLightMinIntervalMs?: number;
   inboundRateLimit?: number;
   inboundRateWindowMs?: number;
+  backupsDir: string;
+  backupRetentionDays?: number;
 }
 
 // allowedScopes === null значит "без ограничений" - реально ограничен
@@ -73,6 +77,7 @@ export class WsGatewayService {
   private readonly throttle: CommandThrottle;
   private readonly inboundRateLimit: number;
   private readonly inboundRateWindowMs: number;
+  readonly backupService: BackupService;
 
   constructor(private readonly deps: WsGatewayDeps) {
     this.inboundRateLimit = deps.inboundRateLimit ?? DEFAULT_INBOUND_RATE_LIMIT;
@@ -81,14 +86,28 @@ export class WsGatewayService {
     this.upstream = new UpstreamConnection({
       url: deps.iridiServerUrl,
       reconnectDelayMs: deps.upstreamReconnectDelayMs,
-      onMessage: (raw) => this.broadcastToBrowsers(raw),
+      onMessage: (raw) => this.handleUpstreamMessage(raw),
       onStatusChange: (connected) => this.broadcastIridiStatus(connected),
+    });
+    // send замыкается на this.upstream, но вызывается только асинхронно на
+    // реальных сообщениях - к тому моменту поле выше уже присвоено.
+    this.backupService = new BackupService({
+      send: (raw) => this.upstream.send(raw),
+      backupsDir: deps.backupsDir,
+      retentionDays: deps.backupRetentionDays ?? DEFAULT_BACKUP_RETENTION_DAYS,
     });
     this.throttle = new CommandThrottle(
       deps.setLightMinIntervalMs ?? DEFAULT_SET_DEVICE_MIN_INTERVAL_MS,
       (raw) => this.upstream.send(raw),
     );
     registerWsDisconnectHandler((userId) => this.disconnectUser(userId));
+  }
+
+  // Сообщения протокола бэкапа/restore (см. BackupService) - служебные
+  // между Server и этим процессом, в браузеры транслировать не нужно.
+  private handleUpstreamMessage(raw: string): void {
+    if (this.backupService.tryHandleUpstreamMessage(raw)) return;
+    this.broadcastToBrowsers(raw);
   }
 
   private disconnectUser(userId: number): void {

@@ -8,9 +8,11 @@ import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { adminRouter } from "./routes/admin.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
+import { createBackupsRouter } from "./routes/backups.routes.js";
 import { healthRouter } from "./routes/health.routes.js";
+import type { BackupService } from "./services/BackupService.js";
 
-export function createApp() {
+export function createApp(backupService: BackupService) {
   const app = express();
 
   app.set("trust proxy", env.trustProxyHops);
@@ -37,6 +39,12 @@ export function createApp() {
 
   app.use("/health", healthRouter);
   app.use("/auth", authRouter);
+  app.use(
+    "/admin/backups",
+    requireAuth,
+    requireAdmin,
+    createBackupsRouter(backupService),
+  );
   app.use("/admin", requireAuth, requireAdmin, adminRouter);
 
   app.use(errorHandler);
