@@ -33,6 +33,14 @@ export interface BackupServiceDeps {
   backupsDir: string;
   retentionDays: number;
   requestTimeoutMs?: number;
+  // -> AdminNotificationService.notify - персистентная запись + живой пуш
+  // админам при неудачном бэкапе/restore (любой триггер).
+  notifyAdmins: (input: {
+    type: string;
+    severity: "info" | "warning" | "error";
+    title: string;
+    detail?: Record<string, unknown>;
+  }) => Promise<unknown>;
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 20000;
@@ -133,6 +141,16 @@ export class BackupService {
       if (pending.requestId) {
         this.rejectPending(this.pendingManualBackups, pending.requestId, new Error(error));
       }
+      this.deps
+        .notifyAdmins({
+          type: "backup_failed",
+          severity: "error",
+          title: `Бэкап БД (${pending.trigger}) не удался`,
+          detail: { backupId, trigger: pending.trigger, error },
+        })
+        .catch((notifyErr: unknown) => {
+          console.error(`[backup] не удалось создать admin-уведомление: ${(notifyErr as Error).message}`);
+        });
     }
   }
 
@@ -223,13 +241,21 @@ export class BackupService {
     const requestId = String(msg.requestId);
     if (msg.success) {
       this.resolvePending(this.pendingRestores, requestId, undefined);
-    } else {
-      this.rejectPending(
-        this.pendingRestores,
-        requestId,
-        new Error(typeof msg.error === "string" ? msg.error : "restore_failed"),
-      );
+      return;
     }
+
+    const error = typeof msg.error === "string" ? msg.error : "restore_failed";
+    this.rejectPending(this.pendingRestores, requestId, new Error(error));
+    this.deps
+      .notifyAdmins({
+        type: "restore_failed",
+        severity: "error",
+        title: "Восстановление БД не удалось",
+        detail: { requestId, error },
+      })
+      .catch((notifyErr: unknown) => {
+        console.error(`[backup] не удалось создать admin-уведомление: ${(notifyErr as Error).message}`);
+      });
   }
 
   private sanitizeFileName(file: string): string {

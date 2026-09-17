@@ -8,8 +8,10 @@ import {
 import { getScopesForUser } from "../../repositories/UserScopeAccessRepository.js";
 import {
   findUserById,
+  UserRole,
   type UserRow,
 } from "../../repositories/UsersRepository.js";
+import { AdminNotificationService } from "../AdminNotificationService.js";
 import { BackupService } from "../BackupService.js";
 import { resolveSessionFromCookieHeader } from "../SessionService.js";
 import { parseClientMessage } from "./clientMessage.js";
@@ -78,6 +80,7 @@ export class WsGatewayService {
   private readonly inboundRateLimit: number;
   private readonly inboundRateWindowMs: number;
   readonly backupService: BackupService;
+  readonly adminNotifications: AdminNotificationService;
 
   constructor(private readonly deps: WsGatewayDeps) {
     this.inboundRateLimit = deps.inboundRateLimit ?? DEFAULT_INBOUND_RATE_LIMIT;
@@ -89,12 +92,17 @@ export class WsGatewayService {
       onMessage: (raw) => this.handleUpstreamMessage(raw),
       onStatusChange: (connected) => this.broadcastIridiStatus(connected),
     });
-    // send замыкается на this.upstream, но вызывается только асинхронно на
-    // реальных сообщениях - к тому моменту поле выше уже присвоено.
+    // push/send замыкаются на this.browserConnections/this.upstream, но
+    // вызываются только асинхронно на реальных сообщениях - к тому моменту
+    // оба поля уже присвоены (browserConnections - вообще при объявлении).
+    this.adminNotifications = new AdminNotificationService({
+      push: (raw) => this.broadcastToAdmins(raw),
+    });
     this.backupService = new BackupService({
       send: (raw) => this.upstream.send(raw),
       backupsDir: deps.backupsDir,
       retentionDays: deps.backupRetentionDays ?? DEFAULT_BACKUP_RETENTION_DAYS,
+      notifyAdmins: (input) => this.adminNotifications.notify(input),
     });
     this.throttle = new CommandThrottle(
       deps.setLightMinIntervalMs ?? DEFAULT_SET_DEVICE_MIN_INTERVAL_MS,
@@ -103,11 +111,45 @@ export class WsGatewayService {
     registerWsDisconnectHandler((userId) => this.disconnectUser(userId));
   }
 
-  // Сообщения протокола бэкапа/restore (см. BackupService) - служебные
-  // между Server и этим процессом, в браузеры транслировать не нужно.
+  // Сообщения протокола бэкапа/restore (BackupService) и ошибок самого
+  // Kanada Server (serverError, см. Kanada Server/scripts/Shared/
+  // HandleError.js) - служебные между Server и этим процессом, в браузеры
+  // транслировать не нужно.
   private handleUpstreamMessage(raw: string): void {
     if (this.backupService.tryHandleUpstreamMessage(raw)) return;
+    if (this.tryHandleServerError(raw)) return;
     this.broadcastToBrowsers(raw);
+  }
+
+  private tryHandleServerError(raw: string): boolean {
+    let msg: unknown;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return false;
+    }
+    if (typeof msg !== "object" || msg === null) return false;
+    const record = msg as Record<string, unknown>;
+    if (record.type !== "serverError") return false;
+
+    const context = typeof record.context === "string" ? record.context : null;
+    const message = typeof record.message === "string" ? record.message : "неизвестная ошибка";
+    const severity =
+      record.severity === "info" || record.severity === "warning" || record.severity === "error"
+        ? record.severity
+        : "error";
+
+    this.adminNotifications
+      .notify({
+        type: "server_error",
+        severity,
+        title: context ? `${context}: ${message}` : message,
+        detail: { message, context, detail: record.detail ?? null },
+      })
+      .catch((err: unknown) => {
+        console.error(`[ws] не удалось создать admin-уведомление из serverError: ${(err as Error).message}`);
+      });
+    return true;
   }
 
   private disconnectUser(userId: number): void {
@@ -293,6 +335,18 @@ export class WsGatewayService {
         this.upstream.getRoomForDevice(id),
       );
       if (payload !== null) conn.ws.send(payload);
+    }
+  }
+
+  // Отдельно от broadcastToBrowsers/filterForConnection - тот фильтр по
+  // комнатам (allowedScopes), а не по роли: даже нескоуп-ограниченный
+  // обычный user проходит его как allowedScopes===null. Уведомления - для
+  // role=admin вне зависимости от scope.
+  private broadcastToAdmins(raw: string): void {
+    for (const conn of this.browserConnections) {
+      if (conn.ws.readyState !== WebSocket.OPEN) continue;
+      if (conn.user.role !== UserRole.Admin) continue;
+      conn.ws.send(raw);
     }
   }
 

@@ -9,6 +9,7 @@
     "start": "node dist/src/server.js",
     "migrate": "tsx scripts/migrate.ts",
     "create-user": "tsx scripts/create-user.ts",
+    "mock:iridium-error": "tsx scripts/mock-iridium-error.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

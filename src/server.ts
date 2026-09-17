@@ -17,7 +17,10 @@ const wsGateway = new WsGatewayService({
   backupRetentionDays: env.backupRetentionDays,
 });
 
-const app = createApp(wsGateway.backupService);
+const app = createApp({
+  backupService: wsGateway.backupService,
+  adminNotifications: wsGateway.adminNotifications,
+});
 
 const server = app.listen(env.port, () => {
   console.log(`kanada-auth-gateway listening on :${env.port}`);
