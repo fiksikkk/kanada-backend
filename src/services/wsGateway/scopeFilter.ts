@@ -63,6 +63,30 @@ export function filterForConnection(
     }
     case "iridiStatus":
       return raw;
+    // Список имён сценариев сам по себе не несёт комнат - фильтровать
+    // нечего (в отличие от sceneDetail ниже, где есть devices[].roomN).
+    case "scenes":
+      return raw;
+    case "sceneDetail": {
+      const devices = Array.isArray(record.devices) ? record.devices : [];
+      const filtered = devices.filter(
+        (device) =>
+          typeof device === "object" &&
+          device !== null &&
+          typeof (device as Record<string, unknown>).roomN === "number" &&
+          isRoomAllowed(
+            allowedScopes,
+            (device as Record<string, unknown>).roomN as number,
+          ),
+      );
+      return JSON.stringify({ ...record, devices: filtered });
+    }
+    // Без per-room данных - пропускаем как есть, как iridiStatus. Без
+    // явного case default вернул бы null и молча обрезал бы эти ответы
+    // scope-ограниченным пользователям.
+    case "sceneDeleted":
+    case "sceneSchedule":
+      return raw;
     default:
       return null;
   }
@@ -81,6 +105,36 @@ export function isCommandAllowed(
   if (message.type === "setDevice") {
     const room = getRoomForDevice(message.id);
     return room !== undefined && isRoomAllowed(allowedScopes, room);
+  }
+  // saveScene затрагивает только перечисленные устройства - каждое
+  // проверяется отдельно, тем же способом, что и setDevice, так что
+  // частичное редактирование сценария (только "свои" устройства) разрешено.
+  if (message.type === "saveScene") {
+    const ids = [
+      ...message.upsert.map((item) => item.id),
+      ...message.remove,
+    ];
+    return ids.every((id) => {
+      const room = getRoomForDevice(id);
+      return room !== undefined && isRoomAllowed(allowedScopes, room);
+    });
+  }
+  // deleteScene/runScene/setSceneSchedule действуют на сценарий целиком
+  // (PlayScene применяет ВСЕ активные записи по всем комнатам разом,
+  // SceneScheduler делает то же по расписанию) - у backend нет дешёвого
+  // способа узнать полный состав сценария по одному только number без
+  // отдельного запроса состояния, поэтому для scope-ограниченных
+  // пользователей эти команды целиком под запретом (безопасный дефолт),
+  // а не частично проверяются, как saveScene. Простой просмотр
+  // (getScenes/getSceneDetail/getSceneSchedule) не ограничен - вернёт
+  // true ниже, а под-комнатная фильтрация уже сделана в
+  // filterForConnection.
+  if (
+    message.type === "deleteScene" ||
+    message.type === "runScene" ||
+    message.type === "setSceneSchedule"
+  ) {
+    return false;
   }
   return true;
 }

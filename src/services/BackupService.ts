@@ -12,6 +12,7 @@ const BACKUP_TABLES = [
   "knx_devices",
   "knx_scene_values",
   "scene_schedules",
+  "scenes",
 ] as const;
 
 type BackupTable = (typeof BACKUP_TABLES)[number];

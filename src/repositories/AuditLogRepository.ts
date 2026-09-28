@@ -13,6 +13,7 @@ export enum AuditEventType {
   AdminUserDelete = "admin_user_delete",
   AdminScopeAccessUpdate = "admin_scope_access_update",
   WsCommand = "ws_command",
+  WsSceneCommand = "ws_scene_command",
   WsScopeDenied = "ws_scope_denied",
 }
 

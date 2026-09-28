@@ -313,6 +313,36 @@ export class WsGatewayService {
         return;
       }
 
+      if (
+        message.type === "saveScene" ||
+        message.type === "deleteScene" ||
+        message.type === "runScene"
+      ) {
+        this.deps
+          .recordAuditEvent({
+            userId: user.id,
+            eventType: AuditEventType.WsSceneCommand,
+            ipAddress,
+            userAgent,
+            detail: message,
+          })
+          .catch(() => {
+            // аудит не должен блокировать саму команду
+          });
+
+        if (message.type === "runScene") {
+          // Та же троттлинг-защита, что у setDevice, но здесь только
+          // против случайного двойного тапа по кнопке запуска - не
+          // проиграть сценарий дважды подряд. saveScene НЕ троттлим:
+          // редактор шлёт его один раз по явному "Сохранить" (не поток
+          // с каждого движения слайдера, как setDevice), а ключ
+          // "по number" для двух разных ещё не сохранённых сценариев
+          // (number=null) совпал бы и мог потерять первое создание.
+          this.throttle.schedule(`runScene:${message.number}`, raw);
+          return;
+        }
+      }
+
       this.upstream.send(raw);
     });
 
